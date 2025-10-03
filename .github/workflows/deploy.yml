@@ -3,22 +3,18 @@ name: CI/CD Frontend Docker Deploy
 on:
   push:
     branches:
-      - main
+      - main  # Trigger on pushes to main branch
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout code (for reference only, EC2 will pull it)
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker Image
-        run: docker build -t frontend-app .
-
+      # Step 2: SSH into EC2 and deploy
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v0.1.7
         with:
@@ -26,8 +22,28 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
+            # Start Docker if not running
             sudo systemctl start docker
-            docker stop frontend-app || true
-            docker rm frontend-app || true
-            docker rmi frontend-app || true
-            docker run -d -p 80:80 --name frontend-app frontend-app
+
+            # Navigate to deployment folder (create if not exists)
+            mkdir -p /home/ec2-user/frontend
+            cd /home/ec2-user/frontend
+
+            # Pull latest code
+            if [ -d ".git" ]; then
+              git reset --hard
+              git pull origin main
+            else
+              git clone https://github.com/BharatVikas/Frontend-cicd.git .
+            fi
+
+            # Stop & remove old container & image
+            sudo docker stop frontend-app || true
+            sudo docker rm frontend-app || true
+            sudo docker rmi frontend-app || true
+
+            # Build new Docker image
+            sudo docker build -t frontend-app .
+
+            # Run new container on port 80
+            sudo docker run -d -p 80:80 --name frontend-app frontend-app
